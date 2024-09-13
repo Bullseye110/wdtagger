@@ -8,9 +8,9 @@ import onnxruntime as rt
 import pandas as pd
 from PIL import Image
 
-TITLE = "WaifuDiffusion Tagger"
+TITLE = "WaifuDiffusion Tagger (Batch Processing)"
 DESCRIPTION = """
-Demo for the WaifuDiffusion tagger models
+Demo for the WaifuDiffusion tagger models with batch processing capability
 
 Example image by [ほし☆☆☆](https://www.pixiv.net/en/users/43565085)
 """
@@ -56,7 +56,6 @@ kaomojis = [
     "||_||",
 ]
 
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--score-slider-step", type=float, default=0.05)
@@ -64,7 +63,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--score-character-threshold", type=float, default=0.85)
     parser.add_argument("--share", action="store_true")
     return parser.parse_args()
-
 
 def load_labels(dataframe) -> list[str]:
     name_series = dataframe["name"]
@@ -78,7 +76,6 @@ def load_labels(dataframe) -> list[str]:
     character_indexes = list(np.where(dataframe["category"] == 4)[0])
     return tag_names, rating_indexes, general_indexes, character_indexes
 
-
 def mcut_threshold(probs):
     """
     Maximum Cut Thresholding (MCut)
@@ -91,7 +88,6 @@ def mcut_threshold(probs):
     t = difs.argmax()
     thresh = (sorted_probs[t] + sorted_probs[t + 1]) / 2
     return thresh
-
 
 class Predictor:
     def __init__(self):
@@ -163,7 +159,7 @@ class Predictor:
 
     def predict(
         self,
-        image,
+        images,
         model_repo,
         general_thresh,
         general_mcut_enabled,
@@ -172,51 +168,54 @@ class Predictor:
     ):
         self.load_model(model_repo)
 
-        image = self.prepare_image(image)
+        results = []
+        for image in images:
+            prepared_image = self.prepare_image(image)
 
-        input_name = self.model.get_inputs()[0].name
-        label_name = self.model.get_outputs()[0].name
-        preds = self.model.run([label_name], {input_name: image})[0]
+            input_name = self.model.get_inputs()[0].name
+            label_name = self.model.get_outputs()[0].name
+            preds = self.model.run([label_name], {input_name: prepared_image})[0]
 
-        labels = list(zip(self.tag_names, preds[0].astype(float)))
+            labels = list(zip(self.tag_names, preds[0].astype(float)))
 
-        # First 4 labels are actually ratings: pick one with argmax
-        ratings_names = [labels[i] for i in self.rating_indexes]
-        rating = dict(ratings_names)
+            # First 4 labels are actually ratings: pick one with argmax
+            ratings_names = [labels[i] for i in self.rating_indexes]
+            rating = dict(ratings_names)
 
-        # Then we have general tags: pick any where prediction confidence > threshold
-        general_names = [labels[i] for i in self.general_indexes]
+            # Then we have general tags: pick any where prediction confidence > threshold
+            general_names = [labels[i] for i in self.general_indexes]
 
-        if general_mcut_enabled:
-            general_probs = np.array([x[1] for x in general_names])
-            general_thresh = mcut_threshold(general_probs)
+            if general_mcut_enabled:
+                general_probs = np.array([x[1] for x in general_names])
+                general_thresh = mcut_threshold(general_probs)
 
-        general_res = [x for x in general_names if x[1] > general_thresh]
-        general_res = dict(general_res)
+            general_res = [x for x in general_names if x[1] > general_thresh]
+            general_res = dict(general_res)
 
-        # Everything else is characters: pick any where prediction confidence > threshold
-        character_names = [labels[i] for i in self.character_indexes]
+            # Everything else is characters: pick any where prediction confidence > threshold
+            character_names = [labels[i] for i in self.character_indexes]
 
-        if character_mcut_enabled:
-            character_probs = np.array([x[1] for x in character_names])
-            character_thresh = mcut_threshold(character_probs)
-            character_thresh = max(0.15, character_thresh)
+            if character_mcut_enabled:
+                character_probs = np.array([x[1] for x in character_names])
+                character_thresh = mcut_threshold(character_probs)
+                character_thresh = max(0.15, character_thresh)
 
-        character_res = [x for x in character_names if x[1] > character_thresh]
-        character_res = dict(character_res)
+            character_res = [x for x in character_names if x[1] > character_thresh]
+            character_res = dict(character_res)
 
-        sorted_general_strings = sorted(
-            general_res.items(),
-            key=lambda x: x[1],
-            reverse=True,
-        )
-        sorted_general_strings = [x[0] for x in sorted_general_strings]
-        sorted_general_strings = (
-            ", ".join(sorted_general_strings).replace("(", "\(").replace(")", "\)")
-        )
+            sorted_general_strings = sorted(
+                general_res.items(),
+                key=lambda x: x[1],
+                reverse=True,
+            )
+            sorted_general_strings = [x[0] for x in sorted_general_strings]
+            sorted_general_strings = (
+                ", ".join(sorted_general_strings).replace("(", "\(").replace(")", "\)")
+            )
 
-        return sorted_general_strings, rating, character_res, general_res
+            results.append((sorted_general_strings, rating, character_res, general_res))
 
+        return results
 
 def main():
     args = parse_args()
@@ -237,103 +236,108 @@ def main():
     ]
 
     with gr.Blocks(title=TITLE) as demo:
-        with gr.Column():
-            gr.Markdown(
-                value=f"<h1 style='text-align: center; margin-bottom: 1rem'>{TITLE}</h1>"
-            )
-            gr.Markdown(value=DESCRIPTION)
-            with gr.Row():
-                with gr.Column(variant="panel"):
-                    image = gr.Image(type="pil", image_mode="RGBA", label="Input")
-                    model_repo = gr.Dropdown(
-                        dropdown_list,
-                        value=SWINV2_MODEL_DSV3_REPO,
-                        label="Model",
-                    )
-                    with gr.Row():
-                        general_thresh = gr.Slider(
-                            0,
-                            1,
-                            step=args.score_slider_step,
-                            value=args.score_general_threshold,
-                            label="General Tags Threshold",
-                            scale=3,
-                        )
-                        general_mcut_enabled = gr.Checkbox(
-                            value=False,
-                            label="Use MCut threshold",
-                            scale=1,
-                        )
-                    with gr.Row():
-                        character_thresh = gr.Slider(
-                            0,
-                            1,
-                            step=args.score_slider_step,
-                            value=args.score_character_threshold,
-                            label="Character Tags Threshold",
-                            scale=3,
-                        )
-                        character_mcut_enabled = gr.Checkbox(
-                            value=False,
-                            label="Use MCut threshold",
-                            scale=1,
-                        )
-                    with gr.Row():
-                        clear = gr.ClearButton(
-                            components=[
-                                image,
-                                model_repo,
-                                general_thresh,
-                                general_mcut_enabled,
-                                character_thresh,
-                                character_mcut_enabled,
-                            ],
-                            variant="secondary",
-                            size="lg",
-                        )
-                        submit = gr.Button(value="Submit", variant="primary", size="lg")
-                with gr.Column(variant="panel"):
-                    sorted_general_strings = gr.Textbox(label="Output (string)")
-                    rating = gr.Label(label="Rating")
-                    character_res = gr.Label(label="Output (characters)")
-                    general_res = gr.Label(label="Output (tags)")
-                    clear.add(
-                        [
-                            sorted_general_strings,
-                            rating,
-                            character_res,
-                            general_res,
-                        ]
-                    )
-
-        submit.click(
-            predictor.predict,
-            inputs=[
-                image,
-                model_repo,
-                general_thresh,
-                general_mcut_enabled,
-                character_thresh,
-                character_mcut_enabled,
-            ],
-            outputs=[sorted_general_strings, rating, character_res, general_res],
+        gr.Markdown(
+            value=f"<h1 style='text-align: center; margin-bottom: 1rem'>{TITLE}</h1>"
         )
+        gr.Markdown(value=DESCRIPTION)
 
-        gr.Examples(
-            [["power.jpg", SWINV2_MODEL_DSV3_REPO, 0.35, False, 0.85, False]],
+        with gr.Row():
+            with gr.Column(scale=1):
+                images = gr.Gallery(
+                    label="Uploaded Images",
+                    show_label=False,
+                    elem_id="gallery",
+                    columns=[2],
+                    rows=[2],
+                    object_fit="contain",
+                    height="auto"
+                )
+                image_upload = gr.File(file_count="multiple", label="Upload Images", file_types=["image"])
+                
+                model_repo = gr.Dropdown(
+                    dropdown_list,
+                    value=SWINV2_MODEL_DSV3_REPO,
+                    label="Model",
+                )
+                with gr.Row():
+                    general_thresh = gr.Slider(
+                        0,
+                        1,
+                        step=args.score_slider_step,
+                        value=args.score_general_threshold,
+                        label="General Tags Threshold",
+                    )
+                    general_mcut_enabled = gr.Checkbox(
+                        value=False,
+                        label="Use MCut threshold",
+                    )
+                with gr.Row():
+                    character_thresh = gr.Slider(
+                        0,
+                        1,
+                        step=args.score_slider_step,
+                        value=args.score_character_threshold,
+                        label="Character Tags Threshold",
+                    )
+                    character_mcut_enabled = gr.Checkbox(
+                        value=False,
+                        label="Use MCut threshold",
+                    )
+                
+                submit = gr.Button(value="Process Images", variant="primary")
+
+            with gr.Column(scale=1):
+                output = gr.Dataframe(
+                    headers=["Image", "General Tags", "Rating", "Characters"],
+                    label="Results",
+                    wrap=True
+                )
+
+        def update_gallery(files):
+            return [file.name for file in files]
+
+        def process_images(image_files, model_repo, general_thresh, general_mcut_enabled, character_thresh, character_mcut_enabled):
+            images = [Image.open(file.name).convert("RGBA") for file in image_files]
+            results = predictor.predict(
+                images,
+                model_repo,
+                general_thresh,
+                general_mcut_enabled,
+                character_thresh,
+                character_mcut_enabled,
+            )
+            
+            output_data = []
+            for file, result in zip(image_files, results):
+                general_tags, rating, characters, _ = result
+                top_rating = max(rating.items(), key=lambda x: x[1])[0]
+                top_characters = ", ".join(sorted(characters.keys(), key=lambda x: characters[x], reverse=True)[:5])
+                output_data.append([
+                    os.path.basename(file.name),
+                    general_tags,
+                    top_rating,
+                    top_characters
+                ])
+            
+            return output_data
+
+        image_upload.change(update_gallery, inputs=[image_upload], outputs=[images])
+        
+        submit.click(
+            process_images,
             inputs=[
-                image,
+                image_upload,
                 model_repo,
                 general_thresh,
                 general_mcut_enabled,
                 character_thresh,
                 character_mcut_enabled,
             ],
+            outputs=[output],
         )
 
     demo.queue(max_size=10)
     demo.launch(share=True)
-
 
 if __name__ == "__main__":
     main()
