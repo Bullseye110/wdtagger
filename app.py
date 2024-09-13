@@ -10,50 +10,31 @@ from PIL import Image
 
 TITLE = "WaifuDiffusion Tagger (Batch Processing)"
 DESCRIPTION = """
-Demo for the WaifuDiffusion tagger models with batch processing capability
+This app allows you to tag anime-style images using various WaifuDiffusion tagger models. 
+Upload multiple images and get general tags, ratings, and character predictions for each.
 
 Example image by [ほし☆☆☆](https://www.pixiv.net/en/users/43565085)
 """
 
-# Dataset v3 series of models:
+# Model repositories (unchanged)
 SWINV2_MODEL_DSV3_REPO = "SmilingWolf/wd-swinv2-tagger-v3"
 CONV_MODEL_DSV3_REPO = "SmilingWolf/wd-convnext-tagger-v3"
 VIT_MODEL_DSV3_REPO = "SmilingWolf/wd-vit-tagger-v3"
 VIT_LARGE_MODEL_DSV3_REPO = "SmilingWolf/wd-vit-large-tagger-v3"
 EVA02_LARGE_MODEL_DSV3_REPO = "SmilingWolf/wd-eva02-large-tagger-v3"
-
-# Dataset v2 series of models:
 MOAT_MODEL_DSV2_REPO = "SmilingWolf/wd-v1-4-moat-tagger-v2"
 SWIN_MODEL_DSV2_REPO = "SmilingWolf/wd-v1-4-swinv2-tagger-v2"
 CONV_MODEL_DSV2_REPO = "SmilingWolf/wd-v1-4-convnext-tagger-v2"
 CONV2_MODEL_DSV2_REPO = "SmilingWolf/wd-v1-4-convnextv2-tagger-v2"
 VIT_MODEL_DSV2_REPO = "SmilingWolf/wd-v1-4-vit-tagger-v2"
 
-# Files to download from the repos
 MODEL_FILENAME = "model.onnx"
 LABEL_FILENAME = "selected_tags.csv"
 
-# https://github.com/toriato/stable-diffusion-webui-wd14-tagger/blob/a9eacb1eff904552d3012babfa28b57e1d3e295c/tagger/ui.py#L368
+# Kaomojis list (unchanged)
 kaomojis = [
-    "0_0",
-    "(o)_(o)",
-    "+_+",
-    "+_-",
-    "._.",
-    "<o>_<o>",
-    "<|>_<|>",
-    "=_=",
-    ">_<",
-    "3_3",
-    "6_9",
-    ">_o",
-    "@_@",
-    "^_^",
-    "o_o",
-    "u_u",
-    "x_x",
-    "|_|",
-    "||_||",
+    "0_0", "(o)_(o)", "+_+", "+_-", "._.", "<o>_<o>", "<|>_<|>", "=_=", ">_<",
+    "3_3", "6_9", ">_o", "@_@", "^_^", "o_o", "u_u", "x_x", "|_|", "||_||",
 ]
 
 def parse_args() -> argparse.Namespace:
@@ -77,12 +58,6 @@ def load_labels(dataframe) -> list[str]:
     return tag_names, rating_indexes, general_indexes, character_indexes
 
 def mcut_threshold(probs):
-    """
-    Maximum Cut Thresholding (MCut)
-    Largeron, C., Moulin, C., & Gery, M. (2012). MCut: A Thresholding Strategy
-     for Multi-label Classification. In 11th International Symposium, IDA 2012
-     (pp. 172-183).
-    """
     sorted_probs = probs[probs.argsort()[::-1]]
     difs = sorted_probs[:-1] - sorted_probs[1:]
     t = difs.argmax()
@@ -219,7 +194,6 @@ class Predictor:
 
 def main():
     args = parse_args()
-
     predictor = Predictor()
 
     dropdown_list = [
@@ -235,66 +209,144 @@ def main():
         VIT_MODEL_DSV2_REPO,
     ]
 
-    with gr.Blocks(title=TITLE) as demo:
+    with gr.Blocks(
+        title=TITLE,
+        theme=gr.themes.Soft(primary_hue="indigo", secondary_hue="blue"),
+    ) as demo:
         gr.Markdown(
             value=f"<h1 style='text-align: center; margin-bottom: 1rem'>{TITLE}</h1>"
         )
         gr.Markdown(value=DESCRIPTION)
 
-        with gr.Row():
-            with gr.Column(scale=1):
-                images = gr.Gallery(
-                    label="Uploaded Images",
-                    show_label=False,
-                    elem_id="gallery",
-                    columns=[2],
-                    rows=[2],
-                    object_fit="contain",
-                    height="auto"
-                )
-                image_upload = gr.File(file_count="multiple", label="Upload Images", file_types=["image"])
-                
-                model_repo = gr.Dropdown(
-                    dropdown_list,
-                    value=SWINV2_MODEL_DSV3_REPO,
-                    label="Model",
-                )
-                with gr.Row():
-                    general_thresh = gr.Slider(
-                        0,
-                        1,
-                        step=args.score_slider_step,
-                        value=args.score_general_threshold,
-                        label="General Tags Threshold",
-                    )
-                    general_mcut_enabled = gr.Checkbox(
-                        value=False,
-                        label="Use MCut threshold",
-                    )
-                with gr.Row():
-                    character_thresh = gr.Slider(
-                        0,
-                        1,
-                        step=args.score_slider_step,
-                        value=args.score_character_threshold,
-                        label="Character Tags Threshold",
-                    )
-                    character_mcut_enabled = gr.Checkbox(
-                        value=False,
-                        label="Use MCut threshold",
-                    )
-                
-                submit = gr.Button(value="Process Images", variant="primary")
+        # Inject custom CSS using gr.HTML
+        gr.HTML(
+            """
+            <style>
+            /* Custom CSS for enhanced styling */
+            #gallery {
+                border: 2px solid #d1d5db;
+                border-radius: 8px;
+                padding: 10px;
+            }
+            #submit-button {
+                background-color: #6366f1;
+                color: white;
+                border-radius: 8px;
+                margin-top: 1em;
+                padding: 10px 20px;
+            }
+            #categorized-results-header, #general-tags-header {
+                color: #4f46e5;
+                margin-bottom: 0.5em;
+            }
+            #general-tags-box {
+                border: 1px solid #d1d5db;
+                border-radius: 5px;
+                padding: 10px;
+                background-color: #f9fafb;
+                white-space: pre-wrap; /* Preserve formatting */
+                overflow: auto;
+            }
+            .gradio-container {
+                max-width: 1200px;
+                margin: auto;
+                padding: 20px;
+            }
+            </style>
+            """
+        )
 
-            with gr.Column(scale=1):
-                output = gr.Dataframe(
-                    headers=["Image", "General Tags", "Rating", "Characters"],
-                    label="Results",
-                    wrap=True
-                )
+        with gr.Tabs():
+            with gr.TabItem("Upload & Settings"):
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        image_upload = gr.File(
+                            file_count="multiple",
+                            label="Upload Images",
+                            file_types=["image"],
+                        )
+                        images = gr.Gallery(
+                            label="Uploaded Images",
+                            show_label=True,
+                            elem_id="gallery",
+                            columns=3,
+                            object_fit="contain",
+                            height="auto",
+                        )
+
+                        with gr.Accordion("Model Settings", open=False):
+                            model_repo = gr.Dropdown(
+                                dropdown_list,
+                                value=SWINV2_MODEL_DSV3_REPO,
+                                label="Select Model",
+                                interactive=True,
+                            )
+                            with gr.Row():
+                                with gr.Column(scale=1):
+                                    general_thresh = gr.Slider(
+                                        0,
+                                        1,
+                                        step=args.score_slider_step,
+                                        value=args.score_general_threshold,
+                                        label="General Tags Threshold",
+                                        info="Threshold for general tag confidence.",
+                                    )
+                                    general_mcut_enabled = gr.Checkbox(
+                                        value=False,
+                                        label="Use Adaptive Threshold for General Tags",
+                                    )
+                                with gr.Column(scale=1):
+                                    character_thresh = gr.Slider(
+                                        0,
+                                        1,
+                                        step=args.score_slider_step,
+                                        value=args.score_character_threshold,
+                                        label="Character Tags Threshold",
+                                        info="Threshold for character tag confidence.",
+                                    )
+                                    character_mcut_enabled = gr.Checkbox(
+                                        value=False,
+                                        label="Use Adaptive Threshold for Character Tags",
+                                    )
+
+                        submit = gr.Button(
+                            value="Process Images",
+                            variant="primary",
+                            size="large",
+                            elem_id="submit-button",
+                        )
+
+            with gr.TabItem("Results"):
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown(
+                            value="### General Tags",
+                            elem_id="general-tags-header",
+                        )
+                        output_general_tags = gr.Textbox(
+                            placeholder="General tags will appear here...",
+                            lines=20,
+                            interactive=False,
+                            show_label=False,
+                            elem_id="general-tags-box",
+                        )
+                    with gr.Column(scale=2):
+                        gr.Markdown(
+                            value="### Categorized Results",
+                            elem_id="categorized-results-header",
+                        )
+                        output_dataframe = gr.Dataframe(
+                            headers=["Image"],
+                            label="Detailed Results",
+                            wrap=True,
+                            interactive=False,
+                            height=400,
+                        )
 
         def update_gallery(files):
-            return [file.name for file in files]
+            if files:
+                return [file.name for file in files]
+            return []
 
         def process_images(image_files, model_repo, general_thresh, general_mcut_enabled, character_thresh, character_mcut_enabled):
             images = [Image.open(file.name).convert("RGBA") for file in image_files]
@@ -307,19 +359,22 @@ def main():
                 character_mcut_enabled,
             )
             
-            output_data = []
+            dataframe_data = []
+            general_tags_list = []
             for file, result in zip(image_files, results):
                 general_tags, rating, characters, _ = result
                 top_rating = max(rating.items(), key=lambda x: x[1])[0]
                 top_characters = ", ".join(sorted(characters.keys(), key=lambda x: characters[x], reverse=True)[:5])
-                output_data.append([
+                dataframe_data.append([
                     os.path.basename(file.name),
-                    general_tags,
-                    top_rating,
-                    top_characters
                 ])
+                # Combine General Tags, Characters, and Rating
+                combined_tags = f"{general_tags}, {top_characters}, {top_rating}"
+                general_tags_list.append(combined_tags)  # Removed image name prefix
             
-            return output_data
+            # Add a blank line between tags from different images
+            general_tags_str = "\n\n".join(general_tags_list)
+            return dataframe_data, general_tags_str
 
         image_upload.change(update_gallery, inputs=[image_upload], outputs=[images])
         
@@ -333,7 +388,10 @@ def main():
                 character_thresh,
                 character_mcut_enabled,
             ],
-            outputs=[output],
+            outputs=[
+                output_dataframe,
+                output_general_tags
+            ],
         )
 
     demo.queue(max_size=10)
