@@ -1,5 +1,7 @@
 import argparse
 import os
+import tempfile
+import zipfile
 
 import gradio as gr
 import huggingface_hub
@@ -11,7 +13,7 @@ from PIL import Image
 TITLE = "WaifuDiffusion Tagger (Batch Processing)"
 DESCRIPTION = """
 This app allows you to tag anime-style images using various WaifuDiffusion tagger models. 
-Upload multiple images and get general tags, ratings, and character predictions for each.
+Upload multiple images or specify a directory containing images and get general tags, ratings, and character predictions for each.
 
 Example image by [ほし☆☆☆](https://www.pixiv.net/en/users/43565085)
 """
@@ -153,11 +155,11 @@ class Predictor:
 
             labels = list(zip(self.tag_names, preds[0].astype(float)))
 
-            # First 4 labels are actually ratings: pick one with argmax
+            # First 4 labels are actually ratings: pick one with max
             ratings_names = [labels[i] for i in self.rating_indexes]
             rating = dict(ratings_names)
 
-            # Then we have general tags: pick any where prediction confidence > threshold
+            # General tags
             general_names = [labels[i] for i in self.general_indexes]
 
             if general_mcut_enabled:
@@ -167,7 +169,7 @@ class Predictor:
             general_res = [x for x in general_names if x[1] > general_thresh]
             general_res = dict(general_res)
 
-            # Everything else is characters: pick any where prediction confidence > threshold
+            # Characters
             character_names = [labels[i] for i in self.character_indexes]
 
             if character_mcut_enabled:
@@ -227,23 +229,30 @@ def main():
                 border: 2px solid #d1d5db;
                 border-radius: 8px;
                 padding: 10px;
+                background-color: #2a2a72; /* Darker purple */
+                color: #eaeaea;
             }
             #submit-button {
-                background-color: #6366f1;
+                background-color: #e94560; /* Neon pink */
                 color: white;
                 border-radius: 8px;
                 margin-top: 1em;
                 padding: 10px 20px;
+                transition: background-color 0.3s;
+            }
+            #submit-button:hover {
+                background-color: #ff6f61; /* Lighter pink on hover */
             }
             #categorized-results-header, #general-tags-header {
-                color: #4f46e5;
+                color: #eaeaea;
                 margin-bottom: 0.5em;
             }
             #general-tags-box {
                 border: 1px solid #d1d5db;
                 border-radius: 5px;
                 padding: 10px;
-                background-color: #f9fafb;
+                background-color: #2a2a72; /* Darker purple */
+                color: #eaeaea;
                 white-space: pre-wrap; /* Preserve formatting */
                 overflow: auto;
             }
@@ -251,6 +260,7 @@ def main():
                 max-width: 1200px;
                 margin: auto;
                 padding: 20px;
+                background-color: #1a1a2e; /* Neon dark purple background */
             }
             </style>
             """
@@ -260,10 +270,11 @@ def main():
             with gr.TabItem("Upload & Settings"):
                 with gr.Row():
                     with gr.Column(scale=1):
-                        image_upload = gr.File(
-                            file_count="multiple",
+                        # Replace gr.File with gr.Files for multiple uploads
+                        image_upload = gr.Files(
                             label="Upload Images",
                             file_types=["image"],
+                            type="filepath",
                         )
                         images = gr.Gallery(
                             label="Uploaded Images",
@@ -272,6 +283,24 @@ def main():
                             columns=3,
                             object_fit="contain",
                             height="auto",
+                        )
+
+                        # Directory Upload Box
+                        input_directory = gr.Textbox(
+                            label="Input Directory for Images",
+                            placeholder="Enter input directory path...",
+                            lines=1,
+                            interactive=True,
+                            info="Enter the server-side directory path containing images. Ensure the application has read access to this directory.",
+                        )
+
+                        # Output Directory Box
+                        output_directory = gr.Textbox(
+                            label="Output Directory for .txt Files",
+                            placeholder="Enter output directory path...",
+                            lines=1,
+                            interactive=True,
+                            info="Enter the server-side directory path where .txt files will be saved. Ensure the application has write access to this directory.",
                         )
 
                         with gr.Accordion("Model Settings", open=False):
@@ -330,6 +359,14 @@ def main():
                             show_label=False,
                             elem_id="general-tags-box",
                         )
+                        # Output Directory Status
+                        output_directory_status = gr.Textbox(
+                            label="Output Directory Status",
+                            placeholder="Status of the output directory...",
+                            lines=2,
+                            interactive=False,
+                            show_label=False,
+                        )
                     with gr.Column(scale=2):
                         gr.Markdown(
                             value="### Categorized Results",
@@ -345,11 +382,41 @@ def main():
 
         def update_gallery(files):
             if files:
-                return [file.name for file in files]
+                return [file for file in files]
             return []
 
-        def process_images(image_files, model_repo, general_thresh, general_mcut_enabled, character_thresh, character_mcut_enabled):
-            images = [Image.open(file.name).convert("RGBA") for file in image_files]
+        def process_images(image_files, input_dir, output_dir, model_repo, general_thresh, general_mcut_enabled, character_thresh, character_mcut_enabled):
+            images = []
+            filenames = []
+
+            # Handle files uploaded via gr.Files
+            if image_files:
+                for file in image_files:
+                    try:
+                        img = Image.open(file).convert("RGBA")
+                        images.append(img)
+                        filenames.append(os.path.basename(file))
+                    except Exception as e:
+                        print(f"Error processing {file}: {e}")
+
+            # Handle directory upload (server-side)
+            if input_dir:
+                if os.path.isdir(input_dir):
+                    for filename in os.listdir(input_dir):
+                        file_path = os.path.join(input_dir, filename)
+                        if os.path.isfile(file_path) and filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif')):
+                            try:
+                                img = Image.open(file_path).convert("RGBA")
+                                images.append(img)
+                                filenames.append(filename)
+                            except Exception as e:
+                                print(f"Error processing {file_path}: {e}")
+                else:
+                    print(f"Directory not found: {input_dir}")
+
+            if not images:
+                return [[]], "No images to process.", "No output directory specified or no images found."
+
             results = predictor.predict(
                 images,
                 model_repo,
@@ -358,30 +425,56 @@ def main():
                 character_thresh,
                 character_mcut_enabled,
             )
-            
+
             dataframe_data = []
             general_tags_list = []
-            for file, result in zip(image_files, results):
+            txt_files = []
+
+            if output_dir:
+                if not os.path.exists(output_dir):
+                    try:
+                        os.makedirs(output_dir)
+                        directory_status = f"Created directory: {output_dir}"
+                    except Exception as e:
+                        directory_status = f"Failed to create directory {output_dir}: {e}"
+                        return [[]], directory_status, "Failed to create output directory."
+                else:
+                    directory_status = f"Using existing directory: {output_dir}"
+            else:
+                directory_status = "No output directory specified."
+                return [[]], directory_status, "Please specify an output directory to save .txt files."
+
+            # Process and save .txt files
+            for filename, result in zip(filenames, results):
                 general_tags, rating, characters, _ = result
                 top_rating = max(rating.items(), key=lambda x: x[1])[0]
                 top_characters = ", ".join(sorted(characters.keys(), key=lambda x: characters[x], reverse=True)[:5])
-                dataframe_data.append([
-                    os.path.basename(file.name),
-                ])
+                dataframe_data.append([filename])
                 # Combine General Tags, Characters, and Rating
                 combined_tags = f"{general_tags}, {top_characters}, {top_rating}"
-                general_tags_list.append(combined_tags)  # Removed image name prefix
-            
-            # Add a blank line between tags from different images
+                general_tags_list.append(combined_tags)
+
+                # Write to individual .txt files in the specified output directory
+                txt_filename = os.path.splitext(filename)[0] + ".txt"
+                txt_path = os.path.join(output_dir, txt_filename)
+                try:
+                    with open(txt_path, "w", encoding="utf-8") as f:
+                        f.write(combined_tags)
+                    txt_files.append(txt_path)
+                except Exception as e:
+                    print(f"Error writing {txt_path}: {e}")
+
             general_tags_str = "\n\n".join(general_tags_list)
-            return dataframe_data, general_tags_str
+            return dataframe_data, general_tags_str, directory_status
 
         image_upload.change(update_gallery, inputs=[image_upload], outputs=[images])
-        
+
         submit.click(
             process_images,
             inputs=[
                 image_upload,
+                input_directory,
+                output_directory,
                 model_repo,
                 general_thresh,
                 general_mcut_enabled,
@@ -390,7 +483,8 @@ def main():
             ],
             outputs=[
                 output_dataframe,
-                output_general_tags
+                output_general_tags,
+                output_directory_status
             ],
         )
 
