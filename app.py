@@ -270,9 +270,9 @@ def main():
             with gr.TabItem("Upload & Settings"):
                 with gr.Row():
                     with gr.Column(scale=1):
-                        # Replace gr.File with gr.Files for multiple uploads
+                        # Option 1: Drag and drop images
                         image_upload = gr.Files(
-                            label="Upload Images",
+                            label="Option 1: Drag and drop images",
                             file_types=["image"],
                             type="filepath",
                         )
@@ -285,22 +285,30 @@ def main():
                             height="auto",
                         )
 
-                        # Directory Upload Box
+                        # Option 2: Specify directory
                         input_directory = gr.Textbox(
-                            label="Input Directory for Images",
+                            label="Option 2: Input Directory for Images",
                             placeholder="Enter input directory path...",
                             lines=1,
                             interactive=True,
                             info="Enter the server-side directory path containing images. Ensure the application has read access to this directory.",
                         )
 
-                        # Output Directory Box
+                        # Checkbox for saving .txt files
+                        save_txt_files = gr.Checkbox(
+                            label="Save results as .txt files",
+                            value=False,
+                            interactive=True,
+                        )
+
+                        # Output Directory Box (only visible when save_txt_files is checked)
                         output_directory = gr.Textbox(
                             label="Output Directory for .txt Files",
                             placeholder="Enter output directory path...",
                             lines=1,
                             interactive=True,
                             info="Enter the server-side directory path where .txt files will be saved. Ensure the application has write access to this directory.",
+                            visible=False,
                         )
 
                         with gr.Accordion("Model Settings", open=False):
@@ -370,7 +378,7 @@ def main():
                     with gr.Column(scale=2):
                         gr.Markdown(
                             value="### Categorized Results",
-                            elem_id="categorized-results-header",
+                                                    elem_id="categorized-results-header",
                         )
                         output_dataframe = gr.Dataframe(
                             headers=["Image"],
@@ -385,11 +393,14 @@ def main():
                 return [file for file in files]
             return []
 
-        def process_images(image_files, input_dir, output_dir, model_repo, general_thresh, general_mcut_enabled, character_thresh, character_mcut_enabled):
+        def toggle_output_directory(save_txt):
+            return gr.update(visible=save_txt)
+
+        def process_images(image_files, input_dir, save_txt, output_dir, model_repo, general_thresh, general_mcut_enabled, character_thresh, character_mcut_enabled):
             images = []
             filenames = []
 
-            # Handle files uploaded via gr.Files
+            # Handle files uploaded via drag-and-drop
             if image_files:
                 for file in image_files:
                     try:
@@ -415,7 +426,7 @@ def main():
                     print(f"Directory not found: {input_dir}")
 
             if not images:
-                return [[]], "No images to process.", "No output directory specified or no images found."
+                return [[]], "No images to process.", "No images found to process."
 
             results = predictor.predict(
                 images,
@@ -428,52 +439,51 @@ def main():
 
             dataframe_data = []
             general_tags_list = []
-            txt_files = []
+            directory_status = ""
 
-            if output_dir:
-                if not os.path.exists(output_dir):
-                    try:
-                        os.makedirs(output_dir)
-                        directory_status = f"Created directory: {output_dir}"
-                    except Exception as e:
-                        directory_status = f"Failed to create directory {output_dir}: {e}"
-                        return [[]], directory_status, "Failed to create output directory."
+            if save_txt:
+                if not output_dir:
+                    directory_status = "No output directory specified. .txt files will not be saved."
                 else:
-                    directory_status = f"Using existing directory: {output_dir}"
-            else:
-                directory_status = "No output directory specified."
-                return [[]], directory_status, "Please specify an output directory to save .txt files."
+                    if not os.path.exists(output_dir):
+                        try:
+                            os.makedirs(output_dir)
+                            directory_status = f"Created directory: {output_dir}"
+                        except Exception as e:
+                            directory_status = f"Failed to create directory {output_dir}: {e}"
+                            return [[]], "No images processed.", directory_status
+                    else:
+                        directory_status = f"Using existing directory: {output_dir}"
 
-            # Process and save .txt files
             for filename, result in zip(filenames, results):
                 general_tags, rating, characters, _ = result
                 top_rating = max(rating.items(), key=lambda x: x[1])[0]
                 top_characters = ", ".join(sorted(characters.keys(), key=lambda x: characters[x], reverse=True)[:5])
                 dataframe_data.append([filename])
-                # Combine General Tags, Characters, and Rating
                 combined_tags = f"{general_tags}, {top_characters}, {top_rating}"
                 general_tags_list.append(combined_tags)
 
-                # Write to individual .txt files in the specified output directory
-                txt_filename = os.path.splitext(filename)[0] + ".txt"
-                txt_path = os.path.join(output_dir, txt_filename)
-                try:
-                    with open(txt_path, "w", encoding="utf-8") as f:
-                        f.write(combined_tags)
-                    txt_files.append(txt_path)
-                except Exception as e:
-                    print(f"Error writing {txt_path}: {e}")
+                if save_txt and output_dir:
+                    txt_filename = os.path.splitext(filename)[0] + ".txt"
+                    txt_path = os.path.join(output_dir, txt_filename)
+                    try:
+                        with open(txt_path, "w", encoding="utf-8") as f:
+                            f.write(combined_tags)
+                    except Exception as e:
+                        print(f"Error writing {txt_path}: {e}")
 
             general_tags_str = "\n\n".join(general_tags_list)
             return dataframe_data, general_tags_str, directory_status
 
         image_upload.change(update_gallery, inputs=[image_upload], outputs=[images])
+        save_txt_files.change(toggle_output_directory, inputs=[save_txt_files], outputs=[output_directory])
 
         submit.click(
             process_images,
             inputs=[
                 image_upload,
                 input_directory,
+                save_txt_files,
                 output_directory,
                 model_repo,
                 general_thresh,
