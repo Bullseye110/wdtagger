@@ -213,7 +213,7 @@ def main():
 
     with gr.Blocks(
         title=TITLE,
-        theme=gr.themes.Soft(primary_hue="indigo", secondary_hue="blue"),
+        theme=gr.themes.Soft(primary_hue="purple", secondary_hue="blue"),
     ) as demo:
         gr.Markdown(
             value=f"<h1 style='text-align: center; margin-bottom: 1rem'>{TITLE}</h1>"
@@ -225,51 +225,123 @@ def main():
             """
             <style>
             /* Custom CSS for enhanced styling */
-            #gallery {
+            .gradio-container {
+                background-color: #1a1a2e; /* Dark neon purple background */
+                color: #eaeaea; /* Light gray text */
+                font-family: 'Arial', sans-serif; /* Modern font */
+            }
+
+            h1, h2, h3, h4, h5, h6 {
+                color: #eaeaea; /* Light gray text */
+            }
+
+            .gr-button {
+                background-color: #4CAF50; /* Green button */
+                border: none;
+                color: white;
+                padding: 10px 20px;
+                text-align: center;
+                text-decoration: none;
+                display: inline-block;
+                font-size: 16px;
+                margin: 4px 2px;
+                border-radius: 8px;
+                cursor: pointer;
+                transition: background-color 0.3s; /* Smooth hover transition */
+            }
+
+            .gr-button:hover {
+                background-color: #3e8e41; /* Darker green on hover */
+            }
+
+            .gr-dropdown {
+                background-color: #333; /* Dark gray dropdown */
+                color: #eaeaea; /* Light gray text */
+                border: 1px solid #555; /* Darker gray border */
+                padding: 8px 12px;
+                border-radius: 5px;
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Subtle shadow */
+            }
+
+            .gr-dropdown:hover {
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); /* Stronger shadow on hover */
+            }
+
+            .gr-slider {
+                background-color: #333; /* Dark gray slider track */
+                border-radius: 10px; /* Rounded slider track */
+            }
+
+            .gr-slider-thumb {
+                background-color: #e94560; /* Neon pink thumb */
+                border: 2px solid #555; /* Dark gray border */
+                border-radius: 50%; /* Rounded thumb */
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3); /* Thumb shadow */
+                cursor: pointer; /* Cursor change on hover */
+            }
+
+            .gr-checkbox {
+                background-color: #333; /* Dark gray checkbox background */
+                color: #eaeaea; /* Light gray text */
+                border: 1px solid #555; /* Darker gray border */
+                padding: 8px 12px;
+                border-radius: 5px;
+            }
+
+            .gr-textbox {
+                background-color: #333; /* Dark gray textbox background */
+                color: #eaeaea; /* Light gray text */
+                border: 1px solid #555; /* Darker gray border */
+                padding: 8px 12px;
+                border-radius: 5px;
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Subtle shadow */
+            }
+
+            .gr-textbox:hover {
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); /* Stronger shadow on hover */
+            }
+
+            .gr-dataframe {
+                background-color: #2a2a72; /* Darker purple background */
+                color: #eaeaea; /* Light gray text */
+                border: 1px solid #555; /* Darker gray border */
+                border-radius: 8px; /* Rounded corners */
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Subtle shadow */
+            }
+
+            .gr-gallery {
                 border: 2px solid #d1d5db;
                 border-radius: 8px;
                 padding: 10px;
                 background-color: #2a2a72; /* Darker purple */
                 color: #eaeaea;
-            }
-            #submit-button {
-                background-color: #e94560; /* Neon pink */
-                color: white;
-                border-radius: 8px;
-                margin-top: 1em;
-                padding: 10px 20px;
-                transition: background-color 0.3s;
-            }
-            #submit-button:hover {
-                background-color: #ff6f61; /* Lighter pink on hover */
-            }
-            #categorized-results-header, #general-tags-header {
-                color: #eaeaea;
-                margin-bottom: 0.5em;
-            }
-            #general-tags-box {
-                border: 1px solid #d1d5db;
-                border-radius: 5px;
-                padding: 10px;
-                background-color: #2a2a72; /* Darker purple */
-                color: #eaeaea;
-                white-space: pre-wrap; /* Preserve formatting */
                 overflow: auto;
             }
-            .gradio-container {
-                max-width: 1200px;
-                margin: auto;
-                padding: 20px;
-                background-color: #1a1a2e; /* Neon dark purple background */
+
+            .gr-gallery img {
+                max-width: 100%;
+                height: auto;
+                border: 1px solid #555; /* Dark gray border */
+                border-radius: 5px; /* Rounded corners for images */
+                box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Subtle shadow */
+                cursor: pointer; /* Cursor change on hover */
+                transition: transform 0.2s ease; /* Smooth scaling transition */
             }
+
+            .gr-gallery img:hover {
+                transform: scale(1.1); /* Image zoom on hover */
+                box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); /* Stronger shadow on hover */
+            }
+
+            /* Add more styles as needed */
             </style>
             """
         )
 
-        with gr.Tabs():
-            with gr.TabItem("Upload & Settings"):
+        with gr.Tabs(elem_id="image-tabs"):
+            with gr.TabItem("Upload & Settings", elem_id="upload-tab"):
                 with gr.Row():
-                    with gr.Column(scale=1):
+                    with gr.Column(scale=1, elem_id="upload-column"):
                         # Option 1: Drag and drop images
                         image_upload = gr.Files(
                             label="Option 1: Drag and drop images",
@@ -311,7 +383,7 @@ def main():
                             visible=False,
                         )
 
-                        with gr.Accordion("Model Settings", open=False):
+                        with gr.Accordion("Model Settings", open=False, elem_id="model-settings"):
                             model_repo = gr.Dropdown(
                                 dropdown_list,
                                 value=SWINV2_MODEL_DSV3_REPO,
@@ -353,9 +425,9 @@ def main():
                             elem_id="submit-button",
                         )
 
-            with gr.TabItem("Results"):
+            with gr.TabItem("Results", elem_id="results-tab"):
                 with gr.Row():
-                    with gr.Column(scale=1):
+                    with gr.Column(scale=1, elem_id="results-column"):
                         gr.Markdown(
                             value="### General Tags",
                             elem_id="general-tags-header",
@@ -375,7 +447,7 @@ def main():
                             interactive=False,
                             show_label=False,
                         )
-                    with gr.Column(scale=2):
+                    with gr.Column(scale=2, elem_id="results-column-2"):
                         gr.Markdown(
                             value="### Categorized Results",
                                                     elem_id="categorized-results-header",
