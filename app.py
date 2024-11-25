@@ -307,6 +307,8 @@ def main():
                 border: 1px solid #555; /* Darker gray border */
                 border-radius: 8px; /* Rounded corners */
                 box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2); /* Subtle shadow */
+                max-height: 400px; /* Added height control */
+                overflow-y: auto; /* Added scrolling */
             }
 
             .gr-gallery {
@@ -332,8 +334,6 @@ def main():
                 transform: scale(1.1); /* Image zoom on hover */
                 box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); /* Stronger shadow on hover */
             }
-
-            /* Add more styles as needed */
             </style>
             """
         )
@@ -450,14 +450,13 @@ def main():
                     with gr.Column(scale=2, elem_id="results-column-2"):
                         gr.Markdown(
                             value="### Categorized Results",
-                                                    elem_id="categorized-results-header",
+                            elem_id="categorized-results-header",
                         )
                         output_dataframe = gr.Dataframe(
                             headers=["Image"],
                             label="Detailed Results",
                             wrap=True,
-                            interactive=False,
-                            height=400,
+                            interactive=False
                         )
 
         def update_gallery(files):
